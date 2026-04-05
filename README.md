@@ -58,9 +58,12 @@ for r in results:
 | :--- | :--- |
 | `memory_store.py` | 核心存储层，支持 SQLite CRUD 及 Embedding 构建 |
 | `smart_recall.py` | 智能召回引擎，集成关键词、向量与 LLM 筛选 |
+| `memory_retrieval.py` | 记忆检索接口，提供多条件组合查询 |
+| `memory_service.py` | 业务逻辑层，协调存储与检索的高级服务 |
 | `memory_lru.py` | 记忆热度管理，实现自动归档与清理 |
 | `compact.py` | 记忆压缩工具，将流水账提炼为核心原则 |
-| `db_common.py` | 数据库连接池与基础工具 |
+| `memory_db.py` | 数据库初始化与 Schema 管理 |
+| `db_common.py` | 数据库连接池与基础工具函数 |
 
 ## 🤝 贡献
 
