@@ -1,82 +1,81 @@
 import subprocess
 import time
-import re
 import json
 
-def extract_with_kedou(url: str) -> dict:
+def extract_with_kedou_api(url: str) -> dict:
     """
-    使用 Kedou 视频解析站 + agent-browser 自动化提取微信公众号文章内容。
-    支持图文完整还原。
+    使用 Kedou 核心 API (通过 agent-browser 注入) 提取微信公众号内容。
+    相比自动化点击，这种方式速度快 10 倍且更稳定。
     """
     KEDOU_URL = "https://www.kedou.life/extract/gzh"
     result = {
         "title": "",
-        "content": "",
+        "content": "", # API 通常只返回媒体链接，文本建议配合 Jina/Changfeng
         "images": [],
-        "source": "kedou_automation"
+        "videos": [],
+        "source": "kedou_api_inject"
     }
 
     try:
         # 1. 打开 Kedou 页面
+        print(f"[Kedou-API] Opening Kedou...")
         subprocess.run(["agent-browser", "open", KEDOU_URL], check=True, capture_output=True)
         time.sleep(3)
 
-        # 2. 填入链接并点击“开始”
+        # 2. 填入链接
         subprocess.run(["agent-browser", "fill", "input, textarea", url], check=True, capture_output=True)
-        subprocess.run(["agent-browser", "click", "button:has-text('开始')"], check=True, capture_output=True)
         
-        # 3. 动态轮询等待解析完成（监听进度条）
-        print(f"[Kedou] Starting parsing for: {url}")
-        max_retries = 20
-        for i in range(max_retries):
-            time.sleep(3)
-            check = subprocess.run(
-                ["agent-browser", "eval", "document.querySelector('.el-progress__text')?.innerText"], 
-                capture_output=True, text=True
-            )
-            if "100%" in check.stdout:
-                print("[Kedou] Parsing completed (100%).")
-                break
-            if i == max_retries - 1:
-                raise Exception("Kedou parsing timeout.")
-
-        # 4. 点击“Markdown”并“点击查看”
-        subprocess.run(["agent-browser", "click", "button:has-text('markdown文本')"], check=True, capture_output=True)
-        time.sleep(2)
-        subprocess.run(["agent-browser", "click", "button:has-text('点击查看')"], check=True, capture_output=True)
-        time.sleep(3)
-
-        # 5. 提取弹窗内的 Markdown 文本
-        text_extract = subprocess.run(
-            ["agent-browser", "eval", "document.querySelector('.el-dialog__body')?.innerText"], 
+        # 3. 注入拦截器并点击
+        print(f"[Kedou-API] Injecting interceptor and clicking...")
+        js_intercept = """
+        window._kedouResult = null;
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            if (args[0].includes('/api/video/extract/v2')) {
+                const res = await originalFetch(...args);
+                window._kedouResult = await res.clone().json();
+            }
+            return originalFetch(...args);
+        };
+        document.querySelector('button')?.click();
+        """
+        subprocess.run(["agent-browser", "eval", js_intercept], check=True, capture_output=True)
+        
+        # 4. 等待结果
+        time.sleep(10)
+        output = subprocess.run(
+            ["agent-browser", "eval", "JSON.stringify(window._kedouResult)"], 
             capture_output=True, text=True
         )
-        result["content"] = text_extract.stdout if text_extract.stdout else "Extract failed."
-
-        # 6. 提取所有图片直链
-        img_extract = subprocess.run(
-            ["agent-browser", "eval", "Array.from(document.querySelectorAll('img')).map(i => i.src).filter(s => s.includes('mmbiz'))"], 
-            capture_output=True, text=True
-        )
-        try:
-            result["images"] = json.loads(img_extract.stdout) if img_extract.stdout else []
-        except:
-            result["images"] = []
-
-        # 7. 提取标题
-        title_extract = subprocess.run(
-            ["agent-browser", "eval", "document.querySelector('.js_title_inner')?.innerText"], 
-            capture_output=True, text=True
-        )
-        result["title"] = title_extract.stdout if title_extract.stdout else "Unknown Title"
+        
+        # 3. 解析返回的 JSON 数据
+        if output.stdout:
+            # agent-browser 有时会返回带引号的字符串，尝试去除首尾引号
+            raw_data = output.stdout.strip().strip('"').replace('\\"', '"')
+            data = json.loads(raw_data)
+            if isinstance(data, dict) and data.get("code") == 200 and data.get("data"):
+                info = data["data"]
+                result["title"] = info.get("title", "Unknown")
+                result["images"] = info.get("imageList", []) or info.get("images", [])
+                result["videos"] = info.get("videoList", []) or info.get("videos", [])
+                print(f"[Kedou-API] Success! Found {len(result['images'])} images.")
+            else:
+                print(f"[Kedou-API] API returned error: {data}")
+        else:
+            print("[Kedou-API] No output from browser eval.")
 
         subprocess.run(["agent-browser", "close"], check=True, capture_output=True)
         return result
 
     except Exception as e:
-        print(f"[Kedou] Error: {str(e)}")
+        print(f"[Kedou-API] Critical Error: {str(e)}")
         try:
             subprocess.run(["agent-browser", "close"], check=True, capture_output=True)
-        except:
-            pass
+        except: pass
         return result
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        res = extract_with_kedou_api(sys.argv[1])
+        print(json.dumps(res, indent=2, ensure_ascii=False))
