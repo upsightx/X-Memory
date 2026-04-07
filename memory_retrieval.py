@@ -20,6 +20,7 @@ from db_common import DB_PATH
 
 # 关键词 → 同义表达映射（用手写规则，不用LLM调用）
 _QUERY_EXPANSION = {
+    # 技术类
     "爬虫": ["web scraper", "数据采集", "抓取", "scraping", "crawl"],
     "融资": ["funding", "投资", "投资方", "轮次", "capital"],
     "模型": ["model", "llm", "大模型", "ai", "语言模型"],
@@ -32,6 +33,29 @@ _QUERY_EXPANSION = {
     "子agent": ["subagent", "子代理", "agent", "助手", "task"],
     "飞书": ["feishu", "lark", "日历", "文档", "云文档"],
     "github": ["git", "仓库", "repo", "代码托管", "trending"],
+    # 性能优化类
+    "性能": ["优化", "performance", "速度", "延迟", "并发", "bottleneck", "瓶颈", "optimize"],
+    "优化": ["性能", "optimize", "改进", "提升", "加速", "tuning", "performance", "建议"],
+    "建议": ["优化", "optimize", "改进", "提升", "suggestion", "recommendation"],
+    "缓存": ["cache", "缓存", "redis", "lru", "内存"],
+    "并发": ["concurrent", "并行", "thread", "异步", "async", "lock"],
+    # 游戏开发类
+    "胜负判定": ["判定算法", "胜利条件", "win condition", "检测", "逻辑"],
+    "对战": ["battle", "websocket", "实时对战", "多人游戏", "socket", "连接"],
+    "游戏": ["game", "游戏逻辑", "玩家", "局面", "board"],
+    "前端": ["frontend", "vue", "react", "ui", "界面", "html", "css"],
+    "后端": ["backend", "springboot", "java", "api", "服务", "server"],
+    # 投资研究类
+    "投资人": ["投资机构", "vc", "investor", "基金", "合伙人"],
+    "商业计划": ["bp", "商业模式", "市场", "盈利", "变现"],
+    "创业": ["创业公司", "startup", "创始人", "团队", "赛道"],
+    # 文件操作类
+    "文件": ["file", "文档", "上传", "下载", "导出", "导入"],
+    "数据库": ["database", "sqlite", "sql", "db", "表", "查询"],
+    # 错误排查类
+    "错误": ["error", "bug", "异常", "exception", "崩溃", "crash", "修复"],
+    "调试": ["debug", "排查", "日志", "log", "跟踪", "trace"],
+    "排查": ["debug", "调试", "错误", "error", "log", "日志", "问题"],
 }
 
 # 口语化表达 → 标准表达
@@ -92,7 +116,7 @@ def rewrite_query(query: str) -> list[str]:
             seen.add(norm)
             result.append(expr.strip())
 
-    return result[:5]
+    return result[:8]
 
 
 # ============ Time Decay ============
