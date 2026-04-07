@@ -23,6 +23,16 @@ from datetime import datetime
 
 from db_common import DB_PATH
 
+# 全局单工作线程池，防止高并发下线程爆炸
+_embed_executor = None
+
+def _get_embed_executor():
+    global _embed_executor
+    if _embed_executor is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _embed_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embed")
+    return _embed_executor
+
 
 # ============ Tag Extraction ============
 
@@ -208,12 +218,10 @@ def remember(
                 )
                 action = "created"
 
-        # Incremental embedding update: 异步后台线程，不阻塞主写入路径
+        # Incremental embedding update: 线程池异步执行，防止高并发下线程爆炸
         try:
-            import threading
             from memory_store import build_embeddings
-            t = threading.Thread(target=build_embeddings, daemon=True)
-            t.start()
+            _get_embed_executor().submit(build_embeddings)
         except Exception as embed_err:
             print(f"[memory_service] embedding update skipped: {embed_err}")
 
