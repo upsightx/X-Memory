@@ -42,19 +42,37 @@ def _get_db(db_path=None):
     return _get_db_common()
 
 
+# 模块级标志：ensure_columns 只在进程生命周期内执行一次
+_columns_ensured = False
+
+
 def ensure_columns(db_path=None):
-    """Idempotently add access_count and last_accessed columns to both tables."""
+    """Idempotently add access_count and last_accessed columns to both tables.
+    
+    优化（2026-04-07）：使用模块级标志，避免在热路径上重复执行 ALTER TABLE。
+    首次调用时执行迁移，后续调用直接返回。
+    """
+    global _columns_ensured
+    if _columns_ensured:
+        return
     db = _get_db(db_path)
+    # 检查列是否已存在，如果已存在则跳过 ALTER TABLE
+    all_exist = True
     for table in SUPPORTED_TABLES:
         tbl = _safe_table(table)
+        existing_cols = {r[1] for r in db.execute(f"PRAGMA table_info({tbl})").fetchall()}
         for col, typedef in [("access_count", "INTEGER DEFAULT 0"), ("last_accessed", "TEXT")]:
-            try:
-                db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
-            except sqlite3.OperationalError as e:
-                if "duplicate column" not in str(e).lower():
-                    raise
-    db.commit()
+            if col not in existing_cols:
+                all_exist = False
+                try:
+                    db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e).lower():
+                        raise
+    if not all_exist:
+        db.commit()
     db.close()
+    _columns_ensured = True
 
 
 def record_access(record_id, table="observations", db_path=None):

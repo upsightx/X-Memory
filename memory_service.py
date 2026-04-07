@@ -208,10 +208,12 @@ def remember(
                 )
                 action = "created"
 
-        # Incremental embedding update: best-effort only
+        # Incremental embedding update: 异步后台线程，不阻塞主写入路径
         try:
+            import threading
             from memory_store import build_embeddings
-            build_embeddings()
+            t = threading.Thread(target=build_embeddings, daemon=True)
+            t.start()
         except Exception as embed_err:
             print(f"[memory_service] embedding update skipped: {embed_err}")
 

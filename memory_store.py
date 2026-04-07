@@ -109,6 +109,15 @@ def init_db():
     db.execute("CREATE INDEX IF NOT EXISTS idx_obs_task_type ON observations(task_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at)")
 
+    # Migrate observations: embedding_status
+    if "embedding_status" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN embedding_status INTEGER DEFAULT 0")
+    dec_cols2 = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
+    if "embedding_status" not in dec_cols2:
+        db.execute("ALTER TABLE decisions ADD COLUMN embedding_status INTEGER DEFAULT 0")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_embed_status ON observations(embedding_status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_embed_status ON decisions(embedding_status)")
+
     # Migrate decisions
     if "triggered_by_obs_id" not in dec_cols:
         db.execute("ALTER TABLE decisions ADD COLUMN triggered_by_obs_id INTEGER DEFAULT NULL")
@@ -145,12 +154,10 @@ def add_observation(
         task_type: coding, research, file_ops, reasoning, general
         description: one-sentence summary. If empty, auto-generated via cheap LLM.
     """
-    # Auto-generate description if empty (LLM failure is silent)
+    # description 不在主路径生成（避免同步 LLM 阻塞写入）
+    # 留空即可，后续可由后台任务异步补充
     if not description:
-        try:
-            description = _generate_description_llm(title, narrative or "")
-        except Exception:
-            description = ""
+        description = ""
 
     db = get_db()
 
@@ -547,12 +554,21 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 def build_embeddings():
-    """Build/update embeddings for all observations and decisions."""
+    """增量构建 embedding，只处理 embedding_status=0 的记录。
+
+    优化（2026-04-07）：
+    - 原来全量扫描所有记录做 hash 对比，数据量大时极慢
+    - 现在只查 embedding_status=0 的记录，写入后标记为 1
+    - 避免了 O(N) 全表扫描，性能随数据增长保持稳定
+    """
     db = get_db()
 
     tasks = []  # (source_table, source_id, text, text_hash)
 
-    for row in db.execute("SELECT id, title, narrative, facts FROM observations").fetchall():
+    # 只查未向量化的记录
+    for row in db.execute(
+        "SELECT id, title, narrative, facts FROM observations WHERE COALESCE(embedding_status, 0) = 0"
+    ).fetchall():
         parts = [row["title"] or ""]
         if row["narrative"]:
             parts.append(row["narrative"])
@@ -561,7 +577,9 @@ def build_embeddings():
         text = "\n".join(parts)
         tasks.append(("observations", row["id"], text, _text_hash(text)))
 
-    for row in db.execute("SELECT id, title, decision, rationale FROM decisions").fetchall():
+    for row in db.execute(
+        "SELECT id, title, decision, rationale FROM decisions WHERE COALESCE(embedding_status, 0) = 0"
+    ).fetchall():
         parts = [row["title"] or ""]
         if row["decision"]:
             parts.append(row["decision"])
@@ -571,25 +589,10 @@ def build_embeddings():
         tasks.append(("decisions", row["id"], text, _text_hash(text)))
 
     if not tasks:
-        print("No records to embed.")
         db.close()
         return
 
-    existing = {}
-    for row in db.execute("SELECT source_table, source_id, text_hash FROM embeddings").fetchall():
-        existing[(row["source_table"], row["source_id"])] = row["text_hash"]
-
-    to_embed = []
-    for source_table, source_id, text, th in tasks:
-        key = (source_table, source_id)
-        if key in existing and existing[key] == th:
-            continue
-        to_embed.append((source_table, source_id, text, th))
-
-    if not to_embed:
-        print("All embeddings up to date.")
-        db.close()
-        return
+    to_embed = tasks  # 全部都是新记录，无需 hash 对比
 
     print(f"Embedding {len(to_embed)} records...")
     texts_to_embed = [t[2] for t in to_embed]
@@ -605,6 +608,11 @@ def build_embeddings():
                 embedding = excluded.embedding,
                 created_at = datetime('now')
         """, (source_table, source_id, th, blob))
+        # 标记为已向量化，避免下次重复处理
+        db.execute(
+            f"UPDATE {source_table} SET embedding_status = 1 WHERE id = ?",
+            (source_id,)
+        )
 
     db.commit()
     db.close()
