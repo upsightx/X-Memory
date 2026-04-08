@@ -202,21 +202,47 @@ def remember(
             _session_memory.add_decision(title, content, record_id)
             action = "created"
         else:
-            # 同主题去重：检查同 title 是否已存在
-            existing_id = _find_existing_by_title(title, "observations")
-            if existing_id:
-                _update_observation(existing_id, narrative or content, tags_str, task_type)
-                record_id = existing_id
-                action = "updated"
-            else:
-                record_id = add_observation(
-                    type=type,
-                    title=title,
+            # Route through memory_governor for dedup + lineage
+            _gov_ok = False
+            try:
+                import sys as _sys
+                _ws = str(__import__('pathlib').Path(__file__).resolve().parent.parent)
+                _mods = _ws + "/modules"
+                for _p in [_ws, _mods]:
+                    if _p not in _sys.path:
+                        _sys.path.insert(0, _p)
+                from memory_governor import add_observation as _gov_add
+                _gov_result = _gov_add(
+                    type=type, title=title,
                     narrative=narrative or content,
-                    tags=merged,
-                    task_type=task_type,
+                    tags=merged, task_type=task_type,
+                    origin_module="memory_service",
                 )
-                action = "created"
+                if _gov_result.get("action") == "duplicate":
+                    record_id = _gov_result["observation_id"]
+                    action = "deduplicated"
+                    _gov_ok = True
+                elif _gov_result.get("success"):
+                    record_id = _gov_result["observation_id"]
+                    action = "created"
+                    _gov_ok = True
+            except (ImportError, Exception):
+                pass
+
+            if not _gov_ok:
+                # Fallback: direct write if governor unavailable
+                existing_id = _find_existing_by_title(title, "observations")
+                if existing_id:
+                    _update_observation(existing_id, narrative or content, tags_str, task_type)
+                    record_id = existing_id
+                    action = "updated"
+                else:
+                    record_id = add_observation(
+                        type=type, title=title,
+                        narrative=narrative or content,
+                        tags=merged, task_type=task_type,
+                    )
+                    action = "created"
 
         # Incremental embedding update: 线程池异步执行，防止高并发下线程爆炸
         try:
