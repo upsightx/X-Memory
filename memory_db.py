@@ -27,7 +27,11 @@ from db_common import DB_PATH, get_db
 
 
 def init_db():
-    """Initialize the database. Safe to call multiple times."""
+    """Initialize the database. Safe to call multiple times.
+    
+    This is the SINGLE schema owner for all tables.
+    memory_store.init_db() handles migrations for additional columns.
+    """
     db = get_db()
     db.executescript("""
         CREATE TABLE IF NOT EXISTS observations (
@@ -36,12 +40,15 @@ def init_db():
             timestamp TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'change',
             title TEXT NOT NULL,
+            description TEXT DEFAULT '',
             narrative TEXT,
             facts TEXT,
             concepts TEXT,
             source TEXT,
             verified INTEGER DEFAULT 0,
             tags TEXT,
+            task_type TEXT DEFAULT '',
+            embedding_status INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -52,6 +59,9 @@ def init_db():
             decision TEXT NOT NULL,
             rejected_alternatives TEXT,
             rationale TEXT,
+            triggered_by_obs_id INTEGER DEFAULT NULL,
+            supersedes_decision_id INTEGER DEFAULT NULL,
+            embedding_status INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -133,6 +143,31 @@ def init_db():
             UNIQUE(source_table, source_id)
         );
     """)
+
+    # ── Migration: add missing columns to existing databases ──
+    obs_cols = {r[1] for r in db.execute("PRAGMA table_info(observations)").fetchall()}
+    if "description" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN description TEXT DEFAULT ''")
+    if "task_type" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN task_type TEXT DEFAULT ''")
+    if "embedding_status" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN embedding_status INTEGER DEFAULT 0")
+
+    dec_cols = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
+    if "triggered_by_obs_id" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN triggered_by_obs_id INTEGER DEFAULT NULL")
+    if "supersedes_decision_id" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN supersedes_decision_id INTEGER DEFAULT NULL")
+    if "embedding_status" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN embedding_status INTEGER DEFAULT 0")
+
+    # Indexes
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_task_type ON observations(task_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_embed_status ON observations(embedding_status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_created ON decisions(created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_embed_status ON decisions(embedding_status)")
+
     db.commit()
     db.close()
     print(f"Database initialized at {DB_PATH}")
