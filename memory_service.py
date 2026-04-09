@@ -226,11 +226,18 @@ def remember(
                     record_id = _gov_result["observation_id"]
                     action = "created"
                     _gov_ok = True
-            except (ImportError, Exception):
-                pass
+            except (ImportError, Exception) as _gov_err:
+                import logging as _logging
+                _logging.getLogger("memory_service").warning(
+                    "memory_governor unavailable, falling back to direct write: %s", _gov_err
+                )
 
             if not _gov_ok:
                 # Fallback: direct write if governor unavailable
+                import logging as _logging2
+                _logging2.getLogger("memory_service").warning(
+                    "Writing observation without governor (no dedup/lineage): title=%s", title
+                )
                 existing_id = _find_existing_by_title(title, "observations")
                 if existing_id:
                     _update_observation(existing_id, narrative or content, tags_str, task_type)
