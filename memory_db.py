@@ -26,11 +26,45 @@ from pathlib import Path
 from db_common import DB_PATH, get_db
 
 
+def _run_post_schema_migrations(db):
+    """Apply all column/index/data migrations in the canonical schema owner."""
+    obs_cols = {r[1] for r in db.execute("PRAGMA table_info(observations)").fetchall()}
+    if "description" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN description TEXT DEFAULT ''")
+    if "task_type" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN task_type TEXT DEFAULT ''")
+    if "embedding_status" not in obs_cols:
+        db.execute("ALTER TABLE observations ADD COLUMN embedding_status INTEGER DEFAULT 0")
+    if "tags" in obs_cols:
+        for row in db.execute("SELECT id, tags FROM observations WHERE tags IS NOT NULL").fetchall():
+            row_id, tags = row
+            try:
+                parsed = json.loads(tags)
+                if isinstance(parsed, list):
+                    db.execute("UPDATE observations SET tags = ? WHERE id = ?", (",".join(parsed), row_id))
+            except Exception:
+                pass
+
+    dec_cols = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
+    if "triggered_by_obs_id" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN triggered_by_obs_id INTEGER DEFAULT NULL")
+    if "supersedes_decision_id" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN supersedes_decision_id INTEGER DEFAULT NULL")
+    if "embedding_status" not in dec_cols:
+        db.execute("ALTER TABLE decisions ADD COLUMN embedding_status INTEGER DEFAULT 0")
+
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_task_type ON observations(task_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_embed_status ON observations(embedding_status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_created ON decisions(created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_embed_status ON decisions(embedding_status)")
+
+
 def init_db():
     """Initialize the database. Safe to call multiple times.
-    
-    This is the SINGLE schema owner for all tables.
-    memory_store.init_db() handles migrations for additional columns.
+
+    This is the SINGLE schema and migration owner for all X-Memory tables.
+    Other modules may call this, but must not define competing migrations.
     """
     db = get_db()
     db.executescript("""
@@ -144,30 +178,7 @@ def init_db():
         );
     """)
 
-    # ── Migration: add missing columns to existing databases ──
-    obs_cols = {r[1] for r in db.execute("PRAGMA table_info(observations)").fetchall()}
-    if "description" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN description TEXT DEFAULT ''")
-    if "task_type" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN task_type TEXT DEFAULT ''")
-    if "embedding_status" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN embedding_status INTEGER DEFAULT 0")
-
-    dec_cols = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
-    if "triggered_by_obs_id" not in dec_cols:
-        db.execute("ALTER TABLE decisions ADD COLUMN triggered_by_obs_id INTEGER DEFAULT NULL")
-    if "supersedes_decision_id" not in dec_cols:
-        db.execute("ALTER TABLE decisions ADD COLUMN supersedes_decision_id INTEGER DEFAULT NULL")
-    if "embedding_status" not in dec_cols:
-        db.execute("ALTER TABLE decisions ADD COLUMN embedding_status INTEGER DEFAULT 0")
-
-    # Indexes
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_task_type ON observations(task_type)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_embed_status ON observations(embedding_status)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_created ON decisions(created_at)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_embed_status ON decisions(embedding_status)")
-
+    _run_post_schema_migrations(db)
     db.commit()
     db.close()
     print(f"Database initialized at {DB_PATH}")
@@ -445,9 +456,13 @@ def search(query=None, type=None, limit=20, tags=None, task_type=None, time_rang
                    time_range=time_range, limit=limit)
 
 
+def get_recent(days=7, limit=50):
+    from memory_store import get_recent as _get_recent
+    return _get_recent(days=days, limit=limit)
+
+
 def init_v6_stack():
-    from memory_store import init_db as _init_v6
-    return _init_v6()
+    return init_db()
 
 
 def embed_text(texts):

@@ -126,7 +126,7 @@ def retrieve(
                                  score, time_weight, source
     """
     # Lazy import to avoid circular dependency at module load
-    from memory_store import search as store_search
+    from memory_db import search as store_search
 
     # Detect time hint from original query string
     time_hint = None

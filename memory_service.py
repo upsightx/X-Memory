@@ -173,7 +173,7 @@ def remember(
     4. 更新 embedding（异步，失败不影响主流程）
     5. 如果是决策，记录到 session_memory
     """
-    from memory_store import add_observation, add_decision
+    from memory_db import add_observation, add_decision, build_embeddings
 
     auto_tags = extract_tags(content, task_type)
     if tags:
@@ -253,7 +253,6 @@ def remember(
 
         # Incremental embedding update: 线程池异步执行，防止高并发下线程爆炸
         try:
-            from memory_store import build_embeddings
             _get_embed_executor().submit(build_embeddings)
         except Exception as embed_err:
             print(f"[memory_service] embedding update skipped: {embed_err}")
@@ -301,7 +300,7 @@ def recall(
 
 def reflect() -> dict:
     """定期分析：生成洞察和建议。"""
-    from memory_store import get_recent, search
+    from memory_db import get_recent, search
 
     recent = get_recent(days=7, limit=100)
 

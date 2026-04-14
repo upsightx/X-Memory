@@ -33,9 +33,10 @@ export SILICONFLOW_API_KEY="sk-xxxxxxxxxxxxxxxx"
 首次使用时，建议为存量记忆构建向量索引：
 
 ```python
-from memory_store import init_db, build_embeddings
+from memory_db import init_db
+from memory_store import build_embeddings
 
-# 初始化数据库表结构
+# 初始化数据库表结构（唯一 schema+migration owner）
 init_db()
 
 # 遍历所有记忆并生成向量嵌入
@@ -57,13 +58,13 @@ for r in results:
 
 | 文件 | 职责 |
 | :--- | :--- |
-| `memory_store.py` | 核心存储层，支持 SQLite CRUD 及 Embedding 构建 |
+| `memory_db.py` | 唯一 schema+migration owner，负责初始化与兼容导出 |
+| `memory_store.py` | 核心存储层，负责 SQLite CRUD、embedding 与 compat init wrapper |
 | `smart_recall.py` | 智能召回引擎，集成关键词、向量与 LLM 筛选 |
 | `memory_retrieval.py` | 记忆检索接口，提供多条件组合查询 |
 | `memory_service.py` | 业务逻辑层，协调存储与检索的高级服务 |
 | `memory_lru.py` | 记忆热度管理，实现自动归档与清理 |
 | `compact.py` | 记忆压缩工具，将流水账提炼为核心原则 |
-| `memory_db.py` | 数据库初始化与 Schema 管理 |
 | `db_common.py` | 数据库连接池与基础工具函数 |
 
 ## 🤝 贡献

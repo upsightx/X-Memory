@@ -82,52 +82,14 @@ def _generate_description_llm(title: str, narrative: str | None) -> str:
 
 # ============ Schema ============
 
+# COMPAT: legacy callers still import init_db from memory_store.
+# The canonical schema+migration owner lives in memory_db.init_db.
 def init_db():
-    """Initialize or migrate the database."""
-    db = get_db()
+    """Initialize/migrate the database via the canonical schema owner."""
+    from memory_db import init_db as canonical_init_db
 
-    # Get existing columns
-    obs_cols = {r[1] for r in db.execute("PRAGMA table_info(observations)").fetchall()}
-    dec_cols = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
-
-    # Migrate observations
-    if "description" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN description TEXT DEFAULT ''")
-    if "task_type" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN task_type TEXT DEFAULT ''")
-    if "tags" in obs_cols:
-        # Convert JSON list to comma-separated string
-        for row in db.execute("SELECT id, tags FROM observations WHERE tags IS NOT NULL").fetchall():
-            row_id, tags = row
-            try:
-                parsed = json.loads(tags)
-                if isinstance(parsed, list):
-                    db.execute("UPDATE observations SET tags = ? WHERE id = ?",
-                               (",".join(parsed), row_id))
-            except Exception:
-                pass
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_task_type ON observations(task_type)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at)")
-
-    # Migrate observations: embedding_status
-    if "embedding_status" not in obs_cols:
-        db.execute("ALTER TABLE observations ADD COLUMN embedding_status INTEGER DEFAULT 0")
-    dec_cols2 = {r[1] for r in db.execute("PRAGMA table_info(decisions)").fetchall()}
-    if "embedding_status" not in dec_cols2:
-        db.execute("ALTER TABLE decisions ADD COLUMN embedding_status INTEGER DEFAULT 0")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_obs_embed_status ON observations(embedding_status)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_embed_status ON decisions(embedding_status)")
-
-    # Migrate decisions
-    if "triggered_by_obs_id" not in dec_cols:
-        db.execute("ALTER TABLE decisions ADD COLUMN triggered_by_obs_id INTEGER DEFAULT NULL")
-    if "supersedes_decision_id" not in dec_cols:
-        db.execute("ALTER TABLE decisions ADD COLUMN supersedes_decision_id INTEGER DEFAULT NULL")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_dec_created ON decisions(created_at)")
-
-    db.commit()
-    db.close()
-    print(f"[memory_store] Database migrated at {DB_PATH}")
+    canonical_init_db()
+    print(f"[memory_store] Database initialized via memory_db at {DB_PATH}")
 
 
 # ============ Write ============
