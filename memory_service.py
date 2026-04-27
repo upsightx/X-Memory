@@ -206,11 +206,11 @@ def remember(
             _gov_ok = False
             try:
                 import sys as _sys
-                _ws = str(__import__('pathlib').Path(__file__).resolve().parent.parent)
-                _mods = _ws + "/modules"
-                for _p in [_ws, _mods]:
-                    if _p not in _sys.path:
-                        _sys.path.insert(0, _p)
+                from pathlib import Path as _Path
+                _workspace = _Path(__file__).resolve().parent.parent
+                _mods = str(_workspace / "self-evolution/modules")
+                if _mods not in _sys.path:
+                    _sys.path.insert(0, _mods)
                 from memory_governor import add_observation as _gov_add
                 _gov_result = _gov_add(
                     type=type, title=title,

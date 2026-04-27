@@ -10,9 +10,7 @@ Core value: remember WHY, not just WHAT.
 
 Zero dependencies. Python 3.8+ and SQLite only.
 
-Note: Embedding and context-builder functions have been extracted to
-memory_embedding.py and memory_context.py respectively.
-They are re-exported here for backward compatibility.
+Embedding and context-builder functions are in memory_embedding.py and memory_context.py. Imported here for unified API.
 """
 from __future__ import annotations
 
@@ -184,23 +182,6 @@ def init_db():
     print(f"Database initialized at {DB_PATH}")
 
 
-# ============ Write ============
-
-def add_observation(type, title, narrative=None, facts=None, concepts=None,
-                    session_id=None, source=None, verified=False, tags=None):
-    """Add an observation. Types: decision, bugfix, feature, refactor, discovery, change"""
-    db = get_db()
-    db.execute(
-        "INSERT INTO observations (session_id, timestamp, type, title, narrative, facts, concepts, source, verified, tags) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (session_id, datetime.now().isoformat(), type, title, narrative,
-         json.dumps(facts, ensure_ascii=False) if facts else None,
-         json.dumps(concepts, ensure_ascii=False) if concepts else None,
-         source, 1 if verified else 0, json.dumps(tags, ensure_ascii=False) if tags else None)
-    )
-    db.commit()
-    rid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.close()
-    return rid
 
 
 def add_decision(title, decision, rejected_alternatives=None, rationale=None):
@@ -415,8 +396,6 @@ def import_json(data):
 # These were extracted to separate modules but are re-exported here
 # so existing code that does `from memory_db import X` still works.
 
-# Bridge old public entrypoints to the restored v6 memory stack where safe.
-# Keep signatures backward-compatible so existing callers continue to work.
 
 def remember(content, type="observation", title=None, narrative=None, tags=None,
              task_type=None, triggered_by_obs_id=None, supersedes_decision_id=None):
@@ -566,7 +545,7 @@ if __name__ == "__main__":
     main()
 
 
-# ============ Class-based compatibility shim ============
+# ============ Class-based API ============
 # Some callers do `from memory_db import MemoryDB`. This wraps the functional API.
 
 class MemoryDB:

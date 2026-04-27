@@ -10,7 +10,7 @@ Structured Memory Store — 自我进化记忆系统的存储层。
 - decisions.triggered_by_obs_id（触发该决策的观察ID）
 - decisions.supersedes_decision_id（覆盖的旧决策ID）
 
-向后兼容：原有接口保持不变，新增 search() 支持标签和时间过滤。
+新增 search() 支持标签和时间过滤。
 """
 from __future__ import annotations
 

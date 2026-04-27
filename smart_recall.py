@@ -39,7 +39,7 @@ LLM_API_KEY = os.environ.get("SMART_RECALL_API_KEY", os.environ.get("SILICONFLOW
 # Model for semantic embedding/retrieval.
 LLM_MODEL = os.environ.get("SMART_RECALL_MODEL", "BAAI/bge-m3")
 
-# Default memory directory — resolved from X记忆 location
+# Default memory directory — resolved from the X-Memory location
 _DEFAULT_MEMORY_DIR = str(Path(__file__).resolve().parent.parent / "memory")
 
 
@@ -254,7 +254,7 @@ def _keyword_filter(query: str, headers: list[dict]) -> list[dict]:
         import sqlite3
         from pathlib import Path
 
-        # Point at the memory.db in the X记忆 package
+        # Point at the memory.db in the X-Memory package
         db_path = Path(__file__).resolve().parent / "memory.db"
         if not db_path.exists():
             return headers  # No DB — skip keyword filter, return all

@@ -1,4 +1,4 @@
-"""公共数据库连接模块 — X记忆
+"""公共数据库连接模块 — X-Memory
 
 统一通过 runtime_config 获取 DB 路径，禁止本地硬编码。
 """
@@ -9,18 +9,21 @@ import sys
 import sqlite3
 from pathlib import Path
 
-# 优先从 runtime_config 获取统一路径
-try:
-    _workspace = Path(__file__).resolve().parent.parent
-    if str(_workspace) not in sys.path:
-        sys.path.insert(0, str(_workspace))
-    from runtime_config import MEMORY_DB_PATH
-    DB_PATH = MEMORY_DB_PATH
-except ImportError:
-    # Fallback: 环境变量 > 本地
-    DB_PATH = Path(os.environ.get("OPENCLAW_MEMORY_DB",
-                                   os.environ.get("SELF_EVOLUTION_DB",
-                                                   Path(__file__).parent / "memory.db")))
+# 显式环境变量优先，其次 runtime_config，最后才是本地候选。
+_env_db = os.environ.get("OPENCLAW_MEMORY_DB", "")
+if _env_db:
+    DB_PATH = Path(_env_db)
+else:
+    try:
+        _workspace = Path(__file__).resolve().parent.parent
+        if str(_workspace) not in sys.path:
+            sys.path.insert(0, str(_workspace))
+        from runtime_config import MEMORY_DB_PATH
+        DB_PATH = MEMORY_DB_PATH
+    except ImportError:
+        # Standalone X-Memory fallback only. OpenClaw runtime should use runtime_config
+        # or OPENCLAW_MEMORY_DB; do not treat SELF_EVOLUTION_DB as canonical.
+        DB_PATH = Path(__file__).parent / "memory.db"
 
 
 def get_db(db_path=None):
